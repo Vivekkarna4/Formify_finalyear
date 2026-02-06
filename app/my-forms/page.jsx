@@ -1,0 +1,124 @@
+"use client";
+import React, { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
+import { db } from "@/config";
+import { JsonForms } from "@/config/schema";
+import { desc, eq } from "drizzle-orm";
+import { useUser } from "@clerk/nextjs";
+import MyFormCard from "../_components/MyFormCard";
+import EmptyStatePlaceholder from "../_components/EmptyStatePlaceholder";
+import { ProtectedPage } from "../_components/Protected";
+import Loading from "../_components/Loading";
+import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
+
+export default function MyFormsPage() {
+  const router = useRouter();
+  const { user } = useUser();
+  const [loading, setLoading] = useState(true);
+  const [formList, setFormList] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filteredForms, setFilteredForms] = useState([]);
+
+  useEffect(() => {
+    user && GetFormList();
+  }, [user]);
+
+  useEffect(() => {
+    const trimmedQuery = searchQuery.trim().toLowerCase();
+
+    if (!trimmedQuery) {
+      setFilteredForms(formList);
+      return;
+    }
+
+    const filtered = formList.filter((form) => {
+      const formTitle = JSON.parse(form.jsonform)?.formTitle || "";
+      return formTitle.toLowerCase().includes(trimmedQuery);
+    });
+
+    setFilteredForms(filtered);
+  }, [searchQuery, formList]);
+
+  const GetFormList = async () => {
+    setLoading(true);
+    try {
+      const result = await db
+        .select()
+        .from(JsonForms)
+        .where(eq(JsonForms.createdBy, user?.primaryEmailAddress?.emailAddress))
+        .orderBy(desc(JsonForms.id));
+      setFormList(result);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <ProtectedPage>
+      <section className="max-w-[1376px] mx-auto p-4 md:p-8 flex flex-col gap-8 min-h-screen overflow-hidden">
+        <div className="flex flex-col md:items-center md:flex-row gap-4 md:gap-6">
+          <div className="w-full inline-flex flex-col justify-start items-start gap-1">
+            <h1 className="text-2xl md:text-3xl font-semibold break-words">
+              My Forms
+            </h1>
+            <p className="text-base font-medium break-words text-muted-foreground">
+              Recently created forms
+            </p>
+          </div>
+          <div className="flex flex-col md:flex-row gap-4 items-center">
+            <div className="relative w-full md:w-80 ">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-5 w-5" />
+              <Input
+                className="pl-10 pr-4 py-2 w-full border rounded-md text-sm focus:ring-2 focus:ring-blue-500"
+                placeholder='Search Forms e.g. "Cricket form"'
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <Button
+              className="w-full md:w-fit"
+              onClick={() => {
+                router.push("/create");
+              }}
+            >
+              Create Form
+            </Button>
+          </div>
+        </div>
+        {loading ? (
+          <Loading />
+        ) : formList.length === 0 ? (
+          <EmptyStatePlaceholder
+            title={"No Forms Found"}
+            description={"No forms found. Create a new form to get started."}
+          />
+        ) : filteredForms.length === 0 ? (
+          <EmptyStatePlaceholder
+            title={searchQuery ? "No matches found" : "No responses yet"}
+            description={
+              searchQuery
+                ? `No forms matching "${searchQuery}"`
+                : "Share your forms to start collecting responses"
+            }
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+            {filteredForms.map((form, index) => (
+              <MyFormCard
+                key={index}
+                formRecord={form}
+                jsonForm={JSON.parse(form.jsonform)}
+                refreshData={GetFormList}
+                redirectTo={`/my-forms/edit-form/${form.id}`}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+    </ProtectedPage>
+  );
+}
